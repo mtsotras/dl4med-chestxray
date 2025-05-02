@@ -8,3 +8,7 @@ Here, we tested three deep learning architectures:
  - Pre-trained ResNet50
  - Pre-trained BEiT (BERT Pretraining of Vision Transformer)
 
+# References
+Wang, X., Peng, Y., Lu, L., Lu, Z., Bagheri, M., & Summers, R. M. (2017). 
+ChestX-ray8: Hospital-scale Chest X-ray Database and Benchmarks on Weakly-Supervised Classification and Localization of Common Thorax Diseases. 
+In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR).

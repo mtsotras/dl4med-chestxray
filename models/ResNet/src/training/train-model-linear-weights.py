@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[45]:
 
 
 import torch
@@ -20,23 +20,23 @@ import pandas as pd
 from PIL import Image, ImageOps
 
 
-# In[ ]:
+# In[46]:
 
 
 # - - - - - - User input - - - - - 
 # Path to folder where images are stored
-dataset_dir = "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images"
+dataset_dir = ""
 # Set to True to test code on subset of training data, set False to run training
-is_using_data_subset = True
+is_use_data_subset = True
 
 # If continuing training:
 is_continue_from_checkpoint = True
 prev_model_path = ""
-# If saving new model:
+# If saving new model: path + file name prefix where model and results will be saved
 save_model_path_prefix = ""
 
 
-# In[2]:
+# In[47]:
 
 
 if torch.cuda.is_available:
@@ -47,7 +47,7 @@ else:
 print(f"Device: {device}")
 
 
-# In[3]:
+# In[48]:
 
 
 # Create datasets:
@@ -58,7 +58,7 @@ val_df = pd.read_csv("../../input/val.csv")
 test_df = pd.read_csv("../../input/test.csv")
 
 
-# In[4]:
+# In[49]:
 
 
 avg_age = train_df['Patient Age'].mean()
@@ -68,7 +68,7 @@ def normalize_age(age):
     return (age - avg_age) / std_age
 
 
-# In[5]:
+# In[50]:
 
 
 class ChestXrayDataset(Dataset):
@@ -106,7 +106,7 @@ class ChestXrayDataset(Dataset):
         return image, metadata, label
 
 
-# In[6]:
+# In[51]:
 
 
 # -----------------------------
@@ -132,7 +132,7 @@ val_test_transform = transforms.Compose([
 ])
 
 
-# In[7]:
+# In[52]:
 
 
 train_ds = ChestXrayDataset(train_df, label_names, dataset_dir, train_transform)
@@ -160,14 +160,14 @@ print(f"temp_label shape: {temp_label.shape}")
 print(f"temp_label: {temp_label[0]}")
 
 
-# In[8]:
+# In[53]:
 
 
 print(f"Number of imges in training dataset: {len(train_ds)}")
 print(f"Number of imges in validation dataset: {len(val_ds)}")
 
 
-# In[9]:
+# In[54]:
 
 
 train_df_totals = train_df[label_names].sum()/len(train_df)*100
@@ -179,7 +179,7 @@ prevalence_percent = sum(train_df[label_names].sum())/sum(train_df[label_names].
 print(f"\n\nOverall percentage of positive labels in training dataset: {prevalence_percent:.5f}")
 
 
-# In[10]:
+# In[55]:
 
 
 train_df_weights = (100-train_df_totals) / train_df_totals
@@ -187,7 +187,7 @@ train_df_weights = (100-train_df_totals) / train_df_totals
 train_df_weights
 
 
-# In[11]:
+# In[56]:
 
 
 def compute_log_pos_weight(train_df, label_names, max_cap=20.0):
@@ -206,7 +206,7 @@ def compute_log_pos_weight(train_df, label_names, max_cap=20.0):
     return torch.tensor(weights, dtype=torch.float32)
 
 
-# In[12]:
+# In[57]:
 
 
 class_weights_raw = torch.tensor(train_df_weights, dtype=torch.float32)
@@ -215,14 +215,14 @@ class_weights_log = compute_log_pos_weight(train_df, label_names)
 print(class_weights_log)
 
 
-# In[13]:
+# In[58]:
 
 
 # Get subset of training data:
 import random
 
-num_train_subset = 1000
-num_val_subset = 1000
+num_train_subset = 100
+num_val_subset = 100
 
 random.seed(123)
 subset_indices_train = random.sample(range(len(train_ds)), num_train_subset)
@@ -241,7 +241,7 @@ train_subset_loader = DataLoader(train_ds_subset, batch_size = 32, shuffle=True)
 val_subset_loader = DataLoader(val_ds_subset, batch_size = 32, shuffle=True)
 
 
-# In[14]:
+# In[59]:
 
 
 import torchvision.models as models
@@ -250,7 +250,7 @@ model_resnet = models.resnet50(weights='IMAGENET1K_V2').to(device)
 print(model_resnet)
 
 
-# In[15]:
+# In[60]:
 
 
 # Remove output layer / classifier layer from model, but save expected size
@@ -262,7 +262,7 @@ print(" - - - - - - - - - - ")
 print(f"original_fc_input_size: {original_fc_input_size}")
 
 
-# In[16]:
+# In[61]:
 
 
 class ResNetConcatHiddenState(nn.Module):
@@ -291,7 +291,7 @@ class ResNetConcatHiddenState(nn.Module):
         return logits
 
 
-# In[17]:
+# In[62]:
 
 
 import time
@@ -389,7 +389,7 @@ def train_model(model, dataloader, optimizer, scheduler, loss_fn, save_path, num
     return model, acc_dict, loss_dict
 
 
-# In[18]:
+# In[63]:
 
 
 # clear cuda memory
@@ -399,14 +399,14 @@ gc.collect()
 torch.cuda.empty_cache()
 
 
-# In[19]:
+# In[64]:
 
 
 class_pos_weights = torch.tensor(class_weights_raw).to(device)
 print(class_pos_weights)
 
 
-# In[20]:
+# In[65]:
 
 
 num_classes = len(label_names)
@@ -421,7 +421,7 @@ else:
     model_new.to(device)
 
 
-# In[27]:
+# In[66]:
 
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=class_pos_weights)
@@ -432,7 +432,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
 
 num_epochs = 10
 
-if use_data_subset:
+if is_use_data_subset:
     dataloader = {'train': train_subset_loader, 'validate': val_subset_loader}
 else:
     dataloader = {'train': train_loader, 'validate': val_loader}
@@ -449,10 +449,4 @@ with open(f"{save_model_path_prefix}_acc_dict.pkl", 'wb') as f:
 
 with open(f"{save_model_path_prefix}_loss_dict.pkl", 'wb') as f:
     pickle.dump(loss_dict, f)
-
-
-# In[ ]:
-
-
-
 

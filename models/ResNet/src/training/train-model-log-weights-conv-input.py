@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[385]:
+# In[1]:
 
 
 import torch
@@ -20,7 +20,23 @@ import pandas as pd
 from PIL import Image, ImageOps
 
 
-# In[386]:
+# In[2]:
+
+
+# - - - - - - User input - - - - - 
+# Path to folder where images are stored
+dataset_dir = "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images"
+# Set to True to test code on subset of training data, set False to run training
+is_use_data_subset = True
+
+# If continuing training:
+is_continue_from_checkpoint = True
+prev_model_path = ""
+# If saving new model: path + file name prefix where model and results will be saved
+save_model_path_prefix = "test-output/test-3"
+
+
+# In[3]:
 
 
 if torch.cuda.is_available:
@@ -31,18 +47,18 @@ else:
 print(f"Device: {device}")
 
 
-# In[387]:
+# In[4]:
 
 
 # Create datasets:
 label_names = ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Effusion", "Emphysema", "Fibrosis", "Hernia", "Infiltration", "Mass", "No Finding", "Nodule", "Pleural_Thickening", "Pneumonia", "Pneumothorax"]
 
-train_df =  pd.read_csv("../input/train.csv")
-val_df = pd.read_csv("../input/val.csv")
-test_df = pd.read_csv("../input/test.csv")
+train_df =  pd.read_csv("../../input/train.csv")
+val_df = pd.read_csv("../../input/val.csv")
+test_df = pd.read_csv("../../input/test.csv")
 
 
-# In[388]:
+# In[5]:
 
 
 avg_age = train_df['Patient Age'].mean()
@@ -52,7 +68,7 @@ def normalize_age(age):
     return (age - avg_age) / std_age
 
 
-# In[389]:
+# In[6]:
 
 
 class ChestXrayDataset(Dataset):
@@ -89,7 +105,7 @@ class ChestXrayDataset(Dataset):
         return image, metadata, label
 
 
-# In[390]:
+# In[7]:
 
 
 # -----------------------------
@@ -111,17 +127,15 @@ val_test_transform = transforms.Compose([
 ])
 
 
-# In[391]:
+# In[8]:
 
 
-train_ds = ChestXrayDataset(train_df, label_names, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images", train_transform)
-val_ds = ChestXrayDataset(val_df, label_names, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images", val_test_transform)
-# test_ds = ChestXrayDataset(test_df, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images")
+train_ds = ChestXrayDataset(train_df, label_names, dataset_dir, train_transform)
+val_ds = ChestXrayDataset(val_df, label_names, dataset_dir, val_test_transform)
 
 # Create dataloaders:
 train_loader = DataLoader(train_ds, batch_size = 32, shuffle=True)
 val_loader = DataLoader(val_ds, batch_size = 32)
-# test_loader = DataLoader(test_ds, batch_size = 25)
 
 # Check that dataloader works as expected:
 torch.manual_seed(123)
@@ -141,7 +155,7 @@ print(f"temp_label shape: {temp_label.shape}")
 print(f"temp_label: {temp_label[0]}")
 
 
-# In[392]:
+# In[9]:
 
 
 print(f"Number of imges in training dataset: {len(train_ds)}")
@@ -149,7 +163,7 @@ print(f"Number of imges in validation dataset: {len(val_ds)}")
 # print(f"Number of imges in test dataset: {len(test_ds)}")
 
 
-# In[394]:
+# In[10]:
 
 
 train_df_totals = train_df[label_names].sum()/len(train_df)*100
@@ -169,7 +183,7 @@ rounded_prevalence_df.style.hide(axis="index")
 
 
 
-# In[395]:
+# In[11]:
 
 
 train_df_weights = (100-train_df_totals) / train_df_totals
@@ -177,7 +191,7 @@ train_df_weights = (100-train_df_totals) / train_df_totals
 train_df_weights
 
 
-# In[396]:
+# In[12]:
 
 
 def compute_log_pos_weight(train_df, label_names, max_cap=20.0):
@@ -196,7 +210,7 @@ def compute_log_pos_weight(train_df, label_names, max_cap=20.0):
     return torch.tensor(weights, dtype=torch.float32)
 
 
-# In[397]:
+# In[13]:
 
 
 class_weights_raw = torch.tensor(train_df_weights, dtype=torch.float32)
@@ -205,20 +219,18 @@ class_weights_log = compute_log_pos_weight(train_df, label_names)
 print(class_weights_log)
 
 
-# In[398]:
+# In[14]:
 
 
 # Get subset of training data:
 import random
 
-# num_train_subset = 1000
-# num_val_subset = 1000
+num_train_subset = 100
+num_val_subset = 100
 
 random.seed(123)
-subset_indices_train = random.sample(range(len(train_ds)), len(train_ds)//1000)
-subset_indices_val = random.sample(range(len(val_ds)), len(val_ds)//1000)
-# subset_indices_train = random.sample(range(len(train_ds)), num_train_subset)
-# subset_indices_val = random.sample(range(len(val_ds)), num_val_subset)
+subset_indices_train = random.sample(range(len(train_ds)), num_train_subset)
+subset_indices_val = random.sample(range(len(val_ds)), num_val_subset)
 
 train_ds_subset = torch.utils.data.Subset(train_ds, subset_indices_train)
 train_ds_subset_len = len(train_ds_subset)
@@ -233,7 +245,7 @@ train_subset_loader = DataLoader(train_ds_subset, batch_size = 32, shuffle=True)
 val_subset_loader = DataLoader(val_ds_subset, batch_size = 32, shuffle=True)
 
 
-# In[399]:
+# In[15]:
 
 
 # # Calculate approximate parameters required for a convolutional layer to downsample to the expected image size
@@ -257,7 +269,7 @@ val_subset_loader = DataLoader(val_ds_subset, batch_size = 32, shuffle=True)
 # print(output_size)
 
 
-# In[400]:
+# In[16]:
 
 
 # # Calculate approximate parameters required for a convolutional layer to downsample to the expected image size
@@ -290,7 +302,7 @@ val_subset_loader = DataLoader(val_ds_subset, batch_size = 32, shuffle=True)
 # print(output_size)
 
 
-# In[401]:
+# In[17]:
 
 
 import torchvision.models as models
@@ -299,7 +311,7 @@ model_resnet = models.resnet50(weights='IMAGENET1K_V2').to(device)
 print(model_resnet)
 
 
-# In[402]:
+# In[18]:
 
 
 class customNormalization(nn.Module):
@@ -317,7 +329,7 @@ class customNormalization(nn.Module):
         return normalized_x
 
 
-# In[403]:
+# In[19]:
 
 
 # Remove output layer / classifier layer from model, but save expected size
@@ -350,13 +362,13 @@ new_input_layer = nn.Sequential(
 model_resnet.conv1 = new_input_layer.to(device)
 
 
-# In[404]:
+# In[20]:
 
 
 print(model_resnet)
 
 
-# In[405]:
+# In[21]:
 
 
 class ResNetConcatHiddenState(nn.Module):
@@ -385,7 +397,7 @@ class ResNetConcatHiddenState(nn.Module):
         return logits
 
 
-# In[406]:
+# In[22]:
 
 
 import time
@@ -483,7 +495,7 @@ def train_model(model, dataloader, optimizer, scheduler, loss_fn, save_path, num
     return model, acc_dict, loss_dict
 
 
-# In[407]:
+# In[23]:
 
 
 # clear cuda memory
@@ -493,28 +505,29 @@ gc.collect()
 torch.cuda.empty_cache()
 
 
-# In[408]:
+# In[24]:
 
 
 class_pos_weights = torch.tensor(class_weights_log).to(device)
 print(class_pos_weights)
 
 
-# In[409]:
+# In[25]:
 
 
 num_classes = len(label_names)
 
 # # Option 1: Create new model
-# model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes).to(device)
-
+if is_continue_from_checkpoint:
+    model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes).to(device)
 # Option 2: Load previously trained model from file to continue training
-model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes)
-model_new.load_state_dict(torch.load('../output/model_best_wts_nodownsize_log_0430_1b.pth'))
-model_new.to(device)
+else:
+    model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes)
+    model_new.load_state_dict(torch.load(prev_model_path))
+    model_new.to(device)
 
 
-# In[410]:
+# In[26]:
 
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=class_pos_weights)
@@ -525,68 +538,21 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
 
 num_epochs = 10
 
-dataloader = {'train': train_loader, 'validate': val_loader}
-# dataloader = {'train': train_subset_loader, 'validate': val_subset_loader}
+if is_use_data_subset:
+    dataloader = {'train': train_subset_loader, 'validate': val_subset_loader}
+else:
+    dataloader = {'train': train_loader, 'validate': val_loader}
 
-save_path = '../output/model_best_wts_nodownsize_log_0430_1c.pth'
+save_path = f"{save_model_path_prefix}_best_weights.pth"
 
 model_resnet_trained, acc_dict, loss_dict = train_model(model_new, dataloader, optimizer, scheduler, loss_fn, save_path, num_epochs, verbose = True)
 
 # - - - Save results to files - - -
-torch.save(model_resnet_trained, '../output/model_trained_nodownsize_log_0430_1c.pth')
+torch.save(model_resnet_trained, f"{save_model_path_prefix}_final_model.pth")
 
-with open('../output/acc_dict_nodownsize_log_0430_1c.pkl', 'wb') as f:
+with open(f"{save_model_path_prefix}_acc_dict.pkl", 'wb') as f:
     pickle.dump(acc_dict, f)
 
-with open('../output/loss_dic_nodownsize_log_0430_1c.pkl', 'wb') as f:
+with open(f"{save_model_path_prefix}_loss_dict.pkl", 'wb') as f:
     pickle.dump(loss_dict, f)
-
-
-# In[411]:
-
-
-# Define functions to plot accuracy and loss over training epochs
-
-def plot_loss(ax, loss, title):
-    x = np.arange(1, len(loss)+1)
-    # plt.figure(dpi=150)
-    ax.plot(x, loss)
-    ax.set_title(title)
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    # plt.show()
-
-def plot_accuracy(ax, accuracy, title):
-    x = np.arange(1, len(accuracy)+1)
-    # plt.figure(dpi=150)
-    ax.plot(x, accuracy)
-    ax.set_title(title)
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Accuracy')
-    # plt.show()
-
-
-# In[412]:
-
-
-# Visualize the progression of loss and accuracy values during training:
-fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-
-plot_loss(axes[0], loss_dict['train'], 'Training Loss')
-plot_accuracy(axes[1], acc_dict['train'], 'Training Accuracy')
-
-fig.tight_layout()
-
-fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-
-plot_loss(axes[0], loss_dict['validate'], 'Validation Loss')
-plot_accuracy(axes[1], acc_dict['validate'], 'Validation Accuracy')
-
-fig.tight_layout()
-
-
-# In[ ]:
-
-
-
 

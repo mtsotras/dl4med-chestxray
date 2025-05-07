@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[5]:
 
 
 import torch
@@ -20,7 +20,23 @@ import pandas as pd
 from PIL import Image, ImageOps
 
 
-# In[2]:
+# In[6]:
+
+
+# - - - - - - User input - - - - - 
+# Path to folder where images are stored
+dataset_dir = ""
+# Set to True to test code on subset of training data, set False to run training
+is_use_data_subset = True
+
+# If continuing training:
+is_continue_from_checkpoint = True
+prev_model_path = ""
+# If saving new model: path + file name prefix where model and results will be saved
+save_model_path_prefix = ""
+
+
+# In[7]:
 
 
 if torch.cuda.is_available:
@@ -37,9 +53,9 @@ print(f"Device: {device}")
 # Create datasets:
 label_names = ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Effusion", "Emphysema", "Fibrosis", "Hernia", "Infiltration", "Mass", "No Finding", "Nodule", "Pleural_Thickening", "Pneumonia", "Pneumothorax"]
 
-train_df =  pd.read_csv("../input/train.csv")
-val_df = pd.read_csv("../input/val.csv")
-test_df = pd.read_csv("../input/test.csv")
+train_df =  pd.read_csv("../../input/train.csv")
+val_df = pd.read_csv("../../input/val.csv")
+test_df = pd.read_csv("../../input/test.csv")
 
 
 # In[9]:
@@ -119,14 +135,12 @@ val_test_transform = transforms.Compose([
 # In[12]:
 
 
-train_ds = ChestXrayDataset(train_df, label_names, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images", train_transform)
-val_ds = ChestXrayDataset(val_df, label_names, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images", val_test_transform)
-# test_ds = ChestXrayDataset(test_df, "/gpfs/scratch/ms15516/dl4med-project/data/extracted-data/images")
+train_ds = ChestXrayDataset(train_df, label_names, dataset_dir, train_transform)
+val_ds = ChestXrayDataset(val_df, label_names, dataset_dir, val_test_transform)
 
 # Create dataloaders:
 train_loader = DataLoader(train_ds, batch_size = 32, shuffle=True)
 val_loader = DataLoader(val_ds, batch_size = 32)
-# test_loader = DataLoader(test_ds, batch_size = 25)
 
 # Check that dataloader works as expected:
 torch.manual_seed(123)
@@ -202,20 +216,18 @@ class_weights_log = compute_log_pos_weight(train_df, label_names)
 print(class_weights_log)
 
 
-# In[23]:
+# In[18]:
 
 
 # Get subset of training data:
 import random
 
-# num_train_subset = 1000
-# num_val_subset = 1000
+num_train_subset = 100
+num_val_subset = 100
 
 random.seed(123)
-subset_indices_train = random.sample(range(len(train_ds)), len(train_ds)//1000)
-subset_indices_val = random.sample(range(len(val_ds)), len(val_ds)//1000)
-# subset_indices_train = random.sample(range(len(train_ds)), num_train_subset)
-# subset_indices_val = random.sample(range(len(val_ds)), num_val_subset)
+subset_indices_train = random.sample(range(len(train_ds)), num_train_subset)
+subset_indices_val = random.sample(range(len(val_ds)), num_val_subset)
 
 train_ds_subset = torch.utils.data.Subset(train_ds, subset_indices_train)
 train_ds_subset_len = len(train_ds_subset)
@@ -230,7 +242,7 @@ train_subset_loader = DataLoader(train_ds_subset, batch_size = 32, shuffle=True)
 val_subset_loader = DataLoader(val_ds_subset, batch_size = 32, shuffle=True)
 
 
-# In[24]:
+# In[19]:
 
 
 import torchvision.models as models
@@ -239,7 +251,7 @@ model_resnet = models.resnet50(weights='IMAGENET1K_V2').to(device)
 print(model_resnet)
 
 
-# In[25]:
+# In[20]:
 
 
 # Remove output layer / classifier layer from model, but save expected size
@@ -251,7 +263,7 @@ print(" - - - - - - - - - - ")
 print(f"original_fc_input_size: {original_fc_input_size}")
 
 
-# In[26]:
+# In[21]:
 
 
 class ResNetConcatHiddenState(nn.Module):
@@ -280,7 +292,7 @@ class ResNetConcatHiddenState(nn.Module):
         return logits
 
 
-# In[27]:
+# In[22]:
 
 
 import time
@@ -378,7 +390,7 @@ def train_model(model, dataloader, optimizer, scheduler, loss_fn, save_path, num
     return model, acc_dict, loss_dict
 
 
-# In[28]:
+# In[23]:
 
 
 # clear cuda memory
@@ -388,28 +400,29 @@ gc.collect()
 torch.cuda.empty_cache()
 
 
-# In[30]:
+# In[24]:
 
 
 class_pos_weights = torch.tensor(class_weights_log).to(device)
 print(class_pos_weights)
 
 
-# In[31]:
+# In[25]:
 
 
 num_classes = len(label_names)
 
 # # Option 1: Create new model
-# model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes).to(device)
-
+if is_continue_from_checkpoint:
+    model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes).to(device)
 # Option 2: Load previously trained model from file to continue training
-model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes)
-model_new.load_state_dict(torch.load('../output/model_best_wts_log_0428_1.pth'))
-model_new.to(device)
+else:
+    model_new = ResNetConcatHiddenState(model_resnet, original_fc_input_size, num_classes)
+    model_new.load_state_dict(torch.load(prev_model_path))
+    model_new.to(device)
 
 
-# In[36]:
+# In[26]:
 
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=class_pos_weights)
@@ -420,68 +433,21 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
 
 num_epochs = 10
 
-dataloader = {'train': train_loader, 'validate': val_loader}
-# dataloader = {'train': train_subset_loader, 'validate': val_subset_loader}
+if is_use_data_subset:
+    dataloader = {'train': train_subset_loader, 'validate': val_subset_loader}
+else:
+    dataloader = {'train': train_loader, 'validate': val_loader}
 
-save_path = '../output/model_best_wts_log_0428_1b.pth'
+save_path = f"{save_model_path_prefix}_best_weights.pth"
 
 model_resnet_trained, acc_dict, loss_dict = train_model(model_new, dataloader, optimizer, scheduler, loss_fn, save_path, num_epochs, verbose = True)
 
 # - - - Save results to files - - -
-torch.save(model_resnet_trained, '../output/model_trained_log_0428_1b.pth')
+torch.save(model_resnet_trained, f"{save_model_path_prefix}_final_model.pth")
 
-with open('../output/acc_dict_log_0428_1b.pkl', 'wb') as f:
+with open(f"{save_model_path_prefix}_acc_dict.pkl", 'wb') as f:
     pickle.dump(acc_dict, f)
 
-with open('../output/loss_dict_log_0428_1b.pkl', 'wb') as f:
+with open(f"{save_model_path_prefix}_loss_dict.pkl", 'wb') as f:
     pickle.dump(loss_dict, f)
-
-
-# In[37]:
-
-
-# # Define functions to plot accuracy and loss over training epochs
-
-# def plot_loss(ax, loss, title):
-#     x = np.arange(1, len(loss)+1)
-#     # plt.figure(dpi=150)
-#     ax.plot(x, loss)
-#     ax.set_title(title)
-#     ax.set_xlabel('Epoch')
-#     ax.set_ylabel('Loss')
-#     # plt.show()
-
-# def plot_accuracy(ax, accuracy, title):
-#     x = np.arange(1, len(accuracy)+1)
-#     # plt.figure(dpi=150)
-#     ax.plot(x, accuracy)
-#     ax.set_title(title)
-#     ax.set_xlabel('Epoch')
-#     ax.set_ylabel('Accuracy')
-#     # plt.show()
-
-
-# In[38]:
-
-
-# # Visualize the progression of loss and accuracy values during training:
-# fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-
-# plot_loss(axes[0], loss_dict['train'], 'Training Loss')
-# plot_accuracy(axes[1], acc_dict['train'], 'Training Accuracy')
-
-# fig.tight_layout()
-
-# fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-
-# plot_loss(axes[0], loss_dict['validate'], 'Validation Loss')
-# plot_accuracy(axes[1], acc_dict['validate'], 'Validation Accuracy')
-
-# fig.tight_layout()
-
-
-# In[ ]:
-
-
-
 

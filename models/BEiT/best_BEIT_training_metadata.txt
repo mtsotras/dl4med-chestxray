@@ -1,0 +1,12 @@
+output_label_size: 15
+num_epochs: 9
+optimizer: Adam
+learning_rate: 0.0003
+scheduler: linear_schedule_with_warmup
+warmup_steps: 2456
+batch_size: 60
+loss_function: BCEWithLogitsLoss
+loss_weights: [2.1143040657043457, 9.236344337463379, 25.587554931640625, 19.509275436401367, 28.171754837036133, 8.857352256774902, 28.057798385620117, 29.60504913330078, 46.586238861083984, 6.0591654777526855, 15.46474552154541, 13.897273063659668, 22.3415470123291, 33.59606170654297, 20.420101165771484]
+model_name: TransformerConcatHiddenState
+
+Finetuned model weights available at mtsotras/BEIT_NIHxray_classification
